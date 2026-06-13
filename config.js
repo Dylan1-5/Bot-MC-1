@@ -27,8 +27,8 @@ import { fileURLToPath } from 'url'
 // ==========================================
 
 global.owner = [
-  ['1234567890'], // Número principal (owner real)
-  ['0987654321']  // Número lid
+  ['50662907002'], // Número principal (owner real)
+  ['225009696014584']  // Número lid
 ]
 
 global.dev = 'Nombre' // Tu nombre o alias

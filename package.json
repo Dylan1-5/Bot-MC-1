@@ -1,0 +1,22 @@
+{
+  "name": "base",
+  "version": "1.0.0",
+  "description": "Base simple para crear tu bot",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["whatsapp-bot", "bot-base", "corvette-script"],
+  "author": "Corvette Script",
+  "license": "MIT",
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "@hapi/boom": "^10.0.1",
+    "chalk": "^4.1.2",
+    "pino": "^8.14.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

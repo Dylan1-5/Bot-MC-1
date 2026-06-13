@@ -1,4 +1,4 @@
-import { watchFile, unwatchFile } from 'fs'
+'Nombre' { watchFile, unwatchFile } from 'fs'
 import chalk from 'chalk'
 import { fileURLToPath } from 'url'
 
@@ -31,8 +31,8 @@ global.owner = [
   ['225009696014584']  // Número lid
 ]
 
-global.dev = 'Nombre' // Tu nombre o alias
-global.botName = 'Bot' // Nombre de tu bot
+global.dev 'Dy,' // Tu nombre o alias
+global.botName = 'Bot_1' // Nombre de tu bot
 global.prefix = ['.'] // Prefijo por defecto (usa .)
 global.banner = 'https://files.catbox.moe/u2viza.jpg' // Banner del menu 
 

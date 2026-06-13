@@ -31,7 +31,7 @@ global.owner = [
   ['225009696014584']  // Número lid
 ]
 
-global.dev = 'D,' //Tu nombre o alias
+global.dev = 'D' //Tu nombre o alias
 global.botName = 'Bot_1' // Nombre de tu bot
 global.prefix = ['.'] // Prefijo por defecto (usa .)
 global.banner = 'https://files.catbox.moe/u2viza.jpg' // Banner del menu 

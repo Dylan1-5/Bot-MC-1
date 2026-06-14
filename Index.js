@@ -217,10 +217,15 @@ async function startBot() {
 
 [ COMANDOS ]
 ● ${usedPrefix}ping
+> Ver velocidad del bot
 ● ${usedPrefix}owner
+> Información de creador 
 ● ${usedPrefix}status
+> Ver estado
 ● ${usedPrefix}play
-
+> Descargar audio 
+● $usedPrefix}tag
+> Mencionar a todos 
 ――――――――――――――――――――`
                         
                         await conn.sendMessage(from, { 

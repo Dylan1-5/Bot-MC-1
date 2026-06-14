@@ -216,10 +216,7 @@ async function startBot() {
 ● ${usedPrefix}owner
 ● ${usedPrefix}status
 
-――――――――――――――――――――
-
-Base: *Corvette Script*
-GitHub: *github.com/ScriptGray*`
+――――――――――――――――――――`
                         
                         await conn.sendMessage(from, { 
                             image: { url: global.banner }, 
@@ -258,11 +255,7 @@ GitHub: *github.com/ScriptGray*`
 Nombre: ${ownerName}
 Contacto: ${ownerNumber}
 
-――――――――――――――――――――
-
-Base desarrollada por:
-Corvette Script
-GitHub: github.com/ScriptGray` 
+――――――――――――――――――――` 
                         }, { quoted: msg })
                         break
                         

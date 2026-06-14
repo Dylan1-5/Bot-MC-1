@@ -269,11 +269,12 @@ Contacto: ${ownerNumber}
                         }, { quoted: msg })
                         break
 
-                    case 'tag':
+                                        case 'tag':
                     case 'all':
                     case 'invocar': 
                     case '`': 
                         try {
+                            // 1. Validar que sea un grupo
                             if (!from.endsWith('@g.us')) {
                                 return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
                             }
@@ -281,13 +282,15 @@ Contacto: ${ownerNumber}
                             const groupMetadata = await conn.groupMetadata(from)
                             const participants = groupMetadata.participants
                             
-                            // Extraemos y limpiamos el número del que envía el mensaje tal como lo hace tu comando owner
-                            const senderNumber = sender.split('@')[0]
-                            const ownerNumber = global.owner[0][0]
+                            // Extraemos solo los dígitos numéricos del remitente y del dueño
+                            const senderNumber = sender.replace(/\D/g, '')
+                            const ownerNumber = String(global.owner?.[0]?.[0] || global.owner || '').replace(/\D/g, '')
                             
+                            // Evaluamos los rangos de ejecución
                             const isUserAdmin = participants.find(p => p.id === sender)?.admin !== null
                             const isOwner = senderNumber === ownerNumber || pushName === global.dev
 
+                            // Si NO es admin Y TAMPOCO es el dueño, se bloquea
                             if (!isUserAdmin && !isOwner) {
                                 return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
                             }
@@ -296,6 +299,7 @@ Contacto: ${ownerNumber}
                             const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
                             const quotedMsg = contextInfo?.quotedMessage
 
+                            // Si se está respondiendo a un mensaje (multimedia o texto)
                             if (quotedMsg) {
                                 const quotedType = Object.keys(quotedMsg)[0]
                                 const contentToForward = {}
@@ -315,9 +319,11 @@ Contacto: ${ownerNumber}
                                     }
                                 }
 
+                                // Envío libre al grupo sin responder a la persona que ejecutó el comando
                                 return await conn.sendMessage(from, contentToForward)
                             }
 
+                            // Envío de Texto Normal (sin responder a nadie)
                             let textMessage = args.join(' ').trim()
                             if (!textMessage) {
                                 return await conn.sendMessage(from, { 
@@ -336,6 +342,7 @@ Contacto: ${ownerNumber}
                             }, { quoted: msg })
                         }
                         break
+
 
                     case 'play':
                     case 'mp3':

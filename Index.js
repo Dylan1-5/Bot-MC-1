@@ -224,7 +224,7 @@ async function startBot() {
 > Ver estado
 ● ${usedPrefix}play
 > Descargar audio 
-● $usedPrefix}tag
+● ${usedPrefix}tag
 > Mencionar a todos 
 ――――――――――――――――――――`
                         
@@ -269,73 +269,77 @@ Contacto: ${ownerNumber}
                         }, { quoted: msg })
                         break
 
-                          
-                          case 'tag':
-                          case 'all':
-                          case 'invocar': 
-                          case '`': 
-    try {
-        // 1. Validar que sea un grupo
-        if (!from.endsWith('@g.us')) {
-            return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
-        }
+                    case 'tag':
+                    case 'all':
+                    case 'invocar': 
+                    case '`': 
+                        try {
+                            if (!from.endsWith('@g.us')) {
+                                return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
+                            }
 
-        // 2. Sistema de Bypass para el Owner / Creador
-        const groupMetadata = await conn.groupMetadata(from)
-        const participants = groupMetadata.participants
-        const userJid = sender // Quien envía el mensaje
-        
-        const isUserAdmin = participants.find(p => p.id === userJid)?.admin !== null
-        const isOwner = userJid.split('@')[0] === global.owner[0][0] || pushName === global.dev
+                            const groupMetadata = await conn.groupMetadata(from)
+                            const participants = groupMetadata.participants
+                            const userJid = sender 
+                            
+                            const isUserAdmin = participants.find(p => p.id === userJid)?.admin !== null
+                            const isOwner = userJid.split('@')[0] === global.owner[0][0] || pushName === global.dev
 
-        // Si NO es admin Y TAMPOCO es el owner, se le bloquea el comando
-        if (!isUserAdmin && !isOwner) {
-            return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
-        }
+                            if (!isUserAdmin && !isOwner) {
+                                return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
+                            }
 
-        // 3. Detectar si el comando responde a otro mensaje o trae texto propio
-        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-        let textMessage = args.join(' ').trim()
+                            const targetParticipants = participants.map(p => p.id).filter(Boolean)
+                            const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
+                            const quotedMsg = contextInfo?.quotedMessage
 
-        // Si el usuario respondió a un mensaje, extraemos el contenido de ese mensaje citado
-        if (quotedMsg) {
-            const quotedType = Object.keys(quotedMsg)[0]
-            const quotedBody = (quotedType === 'conversation' ? quotedMsg.conversation : 
-                                quotedType === 'extendedTextMessage' ? quotedMsg.extendedTextMessage.text : 
-                                quotedType === 'imageMessage' ? quotedMsg.imageMessage.caption : 
-                                quotedType === 'videoMessage' ? quotedMsg.videoMessage.caption : '') || ''
-            
-            // Si el mensaje citado tiene texto, lo sumamos o lo usamos prioritariamente
-            if (quotedBody) {
-                textMessage = textMessage ? `${textMessage}\n\n» *Respondido:*\n${quotedBody}` : quotedBody
-            }
-        }
+                            // Si se responde a un mensaje multimedia o de texto completo
+                            if (quotedMsg) {
+                                const quotedType = Object.keys(quotedMsg)[0]
+                                
+                                // Construimos la estructura exacta del mensaje citado para reenviarlo
+                                const contentToForward = {}
+                                contentToForward[quotedType] = quotedMsg[quotedType]
+                                
+                                // Añadimos las menciones invisibles al mensaje que se enviará libremente
+                                if (!contentToForward.contextInfo) contentToForward.contextInfo = {}
+                                contentToForward.contextInfo.mentionedJid = targetParticipants
 
-        // Si al final no hay texto en los argumentos ni en el mensaje respondido, avisa del uso correcto
-        if (!textMessage) {
-            return await conn.sendMessage(from, { 
-                text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n> O responde a un mensaje usando *${usedPrefix + command}*` 
-            }, { quoted: msg })
-        }
+                                // Si el comando incluía texto adicional propio, lo inyectamos como comentario en el elemento multimedia
+                                let customText = args.join(' ').trim()
+                                if (customText) {
+                                    if (quotedType === 'conversation') {
+                                        contentToForward.conversation = `${customText}\n\n${contentToForward.conversation}`
+                                    } else if (quotedType === 'extendedTextMessage') {
+                                        contentToForward.extendedTextMessage.text = `${customText}\n\n${contentToForward.extendedTextMessage.text}`
+                                    } else if (contentToForward[quotedType] && 'caption' in contentToForward[quotedType]) {
+                                        contentToForward[quotedType].caption = `${customText}\n\n${contentToForward[quotedType].caption || ''}`
+                                    }
+                                }
 
-        // 4. Procesar la mención oculta (sin lista larga de @)
-        const targetParticipants = participants.map(p => p.id).filter(Boolean)
-        const cleanReport = `${textMessage}`
+                                // Se envía sin pasar { quoted: msg } para que no le responda a quien ejecutó el Tag
+                                return await conn.sendMessage(from, contentToForward)
+                            }
 
-        // Enviamos el mensaje con las menciones inyectadas en el array 'mentions'
-        await conn.sendMessage(from, {
-            text: cleanReport,
-            mentions: targetParticipants
-        }, { quoted: msg })
+                            // Envío de Texto Normal si no es una respuesta multimedia
+                            let textMessage = args.join(' ').trim()
+                            if (!textMessage) {
+                                return await conn.sendMessage(from, { 
+                                    text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n> O responde a un archivo/mensaje usando *${usedPrefix + command}*` 
+                                }, { quoted: msg })
+                            }
 
-    } catch (e) {
-        await conn.sendMessage(from, {
-            text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
-        }, { quoted: msg })
-    }
-    break
+                            await conn.sendMessage(from, {
+                                text: textMessage,
+                                mentions: targetParticipants
+                            }) // Removido { quoted: msg } aquí también
 
-
+                        } catch (e) {
+                            await conn.sendMessage(from, {
+                                text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
+                            }, { quoted: msg })
+                        }
+                        break
 
                     case 'play':
                     case 'mp3':

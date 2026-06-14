@@ -7,6 +7,10 @@ import fs, { existsSync } from 'fs'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import readline from 'readline'
+import yts from 'yt-search'
+import fetch from 'node-fetch'
+import { spawn } from 'child_process'
+import { Ror'menimportimportReadable } from 'stream'
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
 const question = (text) => new Promise((resolve) => rl.question(text, resolve))

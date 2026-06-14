@@ -269,7 +269,7 @@ Contacto: ${ownerNumber}
                         }, { quoted: msg })
                         break
 
-                                                            case 'tag':
+                                                                               case 'tag':
                     case 'all':
                     case 'invocar': 
                     case '`': 
@@ -290,9 +290,11 @@ Contacto: ${ownerNumber}
                             
                             // Comprobaciones de permisos
                             const isUserAdmin = participants.find(p => p.id === sender)?.admin !== null
-                            const isOwner = senderNumber === ownerNumber || pushName === global.dev
+                            
+                            // BYPASS REFORZADO: Compara contra tu número real directamente por si el formato falla
+                            const isOwner = senderNumber === ownerNumber || senderNumber.includes('50662907002') || pushName === global.dev
 
-                            // BYPASS: Si no es admin Y TAMPOCO es el dueño real, se bloquea
+                            // Si no es admin Y TAMPOCO es el dueño, se bloquea
                             if (!isUserAdmin && !isOwner) {
                                 return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
                             }
@@ -301,7 +303,7 @@ Contacto: ${ownerNumber}
                             const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
                             const quotedMsg = contextInfo?.quotedMessage
 
-                            // Si se está respondiendo a un mensaje (para hacer un reenvío masivo)
+                            // Si se está respondiendo a un mensaje (imagen, texto, audio, etc.)
                             if (quotedMsg) {
                                 const quotedType = Object.keys(quotedMsg)[0]
                                 const contentToForward = {}
@@ -321,6 +323,7 @@ Contacto: ${ownerNumber}
                                     }
                                 }
 
+                                // Se envía libre sin el { quoted: msg } para que no te responda a ti
                                 return await conn.sendMessage(from, contentToForward)
                             }
 
@@ -343,6 +346,7 @@ Contacto: ${ownerNumber}
                             }, { quoted: msg })
                         }
                         break
+
 
 
 

@@ -280,10 +280,13 @@ Contacto: ${ownerNumber}
 
                             const groupMetadata = await conn.groupMetadata(from)
                             const participants = groupMetadata.participants
-                            const userJid = sender 
                             
-                            const isUserAdmin = participants.find(p => p.id === userJid)?.admin !== null
-                            const isOwner = userJid.split('@')[0] === global.owner[0][0] || pushName === global.dev
+                            // Extraemos y limpiamos el número del que envía el mensaje tal como lo hace tu comando owner
+                            const senderNumber = sender.split('@')[0]
+                            const ownerNumber = global.owner[0][0]
+                            
+                            const isUserAdmin = participants.find(p => p.id === sender)?.admin !== null
+                            const isOwner = senderNumber === ownerNumber || pushName === global.dev
 
                             if (!isUserAdmin && !isOwner) {
                                 return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
@@ -293,19 +296,14 @@ Contacto: ${ownerNumber}
                             const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
                             const quotedMsg = contextInfo?.quotedMessage
 
-                            // Si se responde a un mensaje multimedia o de texto completo
                             if (quotedMsg) {
                                 const quotedType = Object.keys(quotedMsg)[0]
-                                
-                                // Construimos la estructura exacta del mensaje citado para reenviarlo
                                 const contentToForward = {}
                                 contentToForward[quotedType] = quotedMsg[quotedType]
                                 
-                                // Añadimos las menciones invisibles al mensaje que se enviará libremente
                                 if (!contentToForward.contextInfo) contentToForward.contextInfo = {}
                                 contentToForward.contextInfo.mentionedJid = targetParticipants
 
-                                // Si el comando incluía texto adicional propio, lo inyectamos como comentario en el elemento multimedia
                                 let customText = args.join(' ').trim()
                                 if (customText) {
                                     if (quotedType === 'conversation') {
@@ -317,11 +315,9 @@ Contacto: ${ownerNumber}
                                     }
                                 }
 
-                                // Se envía sin pasar { quoted: msg } para que no le responda a quien ejecutó el Tag
                                 return await conn.sendMessage(from, contentToForward)
                             }
 
-                            // Envío de Texto Normal si no es una respuesta multimedia
                             let textMessage = args.join(' ').trim()
                             if (!textMessage) {
                                 return await conn.sendMessage(from, { 
@@ -332,7 +328,7 @@ Contacto: ${ownerNumber}
                             await conn.sendMessage(from, {
                                 text: textMessage,
                                 mentions: targetParticipants
-                            }) // Removido { quoted: msg } aquí también
+                            })
 
                         } catch (e) {
                             await conn.sendMessage(from, {
@@ -488,7 +484,7 @@ const getVideoId = (text = '') => {
 const sanitizeFileName = (name = 'audio') =>
   cleanExtension(name).replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'audio'
 
-function cleanExtension(name = 'audio') {
+ function cleanExtension(name = 'audio') {
   return String(name || 'audio').replace(/\.(mp3|m4a|opus|ogg|wav|flac|mp4|webm|mkv)$/i, '')
 }
 

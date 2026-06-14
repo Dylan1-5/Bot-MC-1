@@ -1,6 +1,7 @@
-'https { watchFile, unwatchFile } from 'fs'
+import { watchFile, unwatchFile } from 'fs'
 import chalk from 'chalk'
 import { fileURLToPath } from 'url'
+
 
 // CONFIGURACIÓN BÁSICA PARA BOT DE WHATSAPP
 // ==========================================

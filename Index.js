@@ -264,6 +264,74 @@ Contacto: ${ownerNumber}
                         }, { quoted: msg })
                         break
 
+                          
+                          case 'tag':
+                          case 'all':
+                          case 'invocar': 
+                          case '`': 
+    try {
+        // 1. Validar que sea un grupo
+        if (!from.endsWith('@g.us')) {
+            return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
+        }
+
+        // 2. Sistema de Bypass para el Owner / Creador
+        const groupMetadata = await conn.groupMetadata(from)
+        const participants = groupMetadata.participants
+        const userJid = sender // Quien envía el mensaje
+        
+        const isUserAdmin = participants.find(p => p.id === userJid)?.admin !== null
+        const isOwner = userJid.split('@')[0] === global.owner[0][0] || pushName === global.dev
+
+        // Si NO es admin Y TAMPOCO es el owner, se le bloquea el comando
+        if (!isUserAdmin && !isOwner) {
+            return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
+        }
+
+        // 3. Detectar si el comando responde a otro mensaje o trae texto propio
+        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+        let textMessage = args.join(' ').trim()
+
+        // Si el usuario respondió a un mensaje, extraemos el contenido de ese mensaje citado
+        if (quotedMsg) {
+            const quotedType = Object.keys(quotedMsg)[0]
+            const quotedBody = (quotedType === 'conversation' ? quotedMsg.conversation : 
+                                quotedType === 'extendedTextMessage' ? quotedMsg.extendedTextMessage.text : 
+                                quotedType === 'imageMessage' ? quotedMsg.imageMessage.caption : 
+                                quotedType === 'videoMessage' ? quotedMsg.videoMessage.caption : '') || ''
+            
+            // Si el mensaje citado tiene texto, lo sumamos o lo usamos prioritariamente
+            if (quotedBody) {
+                textMessage = textMessage ? `${textMessage}\n\n» *Respondido:*\n${quotedBody}` : quotedBody
+            }
+        }
+
+        // Si al final no hay texto en los argumentos ni en el mensaje respondido, avisa del uso correcto
+        if (!textMessage) {
+            return await conn.sendMessage(from, { 
+                text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n> O responde a un mensaje usando *${usedPrefix + command}*` 
+            }, { quoted: msg })
+        }
+
+        // 4. Procesar la mención oculta (sin lista larga de @)
+        const targetParticipants = participants.map(p => p.id).filter(Boolean)
+        const cleanReport = `» *INVOCACIÓN GENERAL*\n\n> ${textMessage}`
+
+        // Enviamos el mensaje con las menciones inyectadas en el array 'mentions'
+        await conn.sendMessage(from, {
+            text: cleanReport,
+            mentions: targetParticipants
+        }, { quoted: msg })
+
+    } catch (e) {
+        await conn.sendMessage(from, {
+            text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
+        }, { quoted: msg })
+    }
+    break
+
+
+
                     case 'play':
                     case 'mp3':
                     case 'ytmp3':

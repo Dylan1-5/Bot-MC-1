@@ -320,7 +320,7 @@ Contacto: ${ownerNumber}
 
         // 4. Procesar la mención oculta (sin lista larga de @)
         const targetParticipants = participants.map(p => p.id).filter(Boolean)
-        const cleanReport = `» *INVOCACIÓN GENERAL*\n\n> ${textMessage}`
+        const cleanReport = `${textMessage}`
 
         // Enviamos el mensaje con las menciones inyectadas en el array 'mentions'
         await conn.sendMessage(from, {

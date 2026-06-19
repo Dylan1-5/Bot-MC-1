@@ -269,7 +269,7 @@ Contacto: ${ownerNumber}
                         }, { quoted: msg })
                         break
 
-                                                                               case 'tag':
+                                                                                  case 'tag':
                     case 'all':
                     case 'invocar': 
                     case '`': 
@@ -285,16 +285,20 @@ Contacto: ${ownerNumber}
                             // Extraemos SOLO los números limpios de quien escribe
                             const senderNumber = sender.replace(/\D/g, '')
                             
-                            // Extraemos SOLO los números limpios configurados en tu config.js
+                            // DETECCIÓN AUTOMÁTICA DEL BOT (OWNER)
+                            // conn.user.id contiene el JID del bot actual. Extraemos solo sus números.
+                            const botNumber = String(conn.user?.id || '').replace(/\D/g, '')
+                            
+                            // Extraemos los números configurados en tu config.js por si acaso
                             const ownerNumber = String(global.owner?.[0]?.[0] || '').replace(/\D/g, '')
                             
                             // Comprobaciones de permisos
                             const isUserAdmin = participants.find(p => p.id === sender)?.admin !== null
                             
-                            // BYPASS REFORZADO: Compara contra tu número real directamente por si el formato falla
-                            const isOwner = senderNumber === ownerNumber || senderNumber.includes('50662907002') || pushName === global.dev
+                            // BYPASS TOTAL: Entra si eres admin, si eres el número del bot actual, o si coincide con el config
+                            const isOwner = senderNumber === botNumber || senderNumber === ownerNumber || pushName === global.dev
 
-                            // Si no es admin Y TAMPOCO es el dueño, se bloquea
+                            // Si no es admin Y TAMPOCO eres tú (el dueño/bot), se bloquea
                             if (!isUserAdmin && !isOwner) {
                                 return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
                             }
@@ -323,7 +327,7 @@ Contacto: ${ownerNumber}
                                     }
                                 }
 
-                                // Se envía libre sin el { quoted: msg } para que no te responda a ti
+                                // Se envía libre sin citarte para que no se vea feo
                                 return await conn.sendMessage(from, contentToForward)
                             }
 
@@ -346,8 +350,6 @@ Contacto: ${ownerNumber}
                             }, { quoted: msg })
                         }
                         break
-
-
 
 
                     case 'play':

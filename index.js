@@ -15,6 +15,16 @@ import { Readable } from 'stream'
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
 const question = (text) => new Promise((resolve) => rl.question(text, resolve))
 
+// Configuración global para inyectar la etiqueta de Meta AI en los mensajes de texto
+const iaContext = {
+    isForwarded: true,
+    forwardedNewsletterMessageInfo: {
+        newsletterJid: '120363143242031730@newsletter',
+        serverMessageId: 1,
+        newsletterName: 'Meta AI'
+    }
+}
+
 const decodeJid = (jid) => {
     if (!jid) return jid
     if (/:\d+@/gi.test(jid)) {
@@ -106,6 +116,23 @@ async function startBot() {
     
     let opcion
     let phoneNumber = ""
+    let saltarMensajes = "1"
+
+    // Pregunta para saltar mensajes anteriores en Termux
+    do {
+        console.log('')
+        console.log(chalk.cyan('   -------------------------------'))
+        console.log(chalk.cyan('       CONFIGURACION DE HISTORIAL'))
+        console.log(chalk.cyan('   -------------------------------'))
+        console.log(chalk.white('   1) Saltar mensajes anteriores (Ignorar historial)'))
+        console.log(chalk.white('   2) No saltar mensajes anteriores (Responder todo)'))
+        console.log(chalk.cyan('   -------------------------------'))
+        process.stdout.write(chalk.white('   Selecciona opcion (1/2): '))
+        saltarMensajes = await question('')
+        if (!/^[1-2]$/.test(saltarMensajes)) {
+            console.log(chalk.red('   Solo opciones 1 o 2'))
+        }
+    } while (saltarMensajes !== '1' && saltarMensajes !== '2')
 
     if (!fs.existsSync(`./sessions/creds.json`)) {
         do {
@@ -180,8 +207,14 @@ async function startBot() {
 
     conn.ev.on('messages.upsert', async (m) => {
         try {
+            // Validar si el usuario eligió saltar los mensajes antiguos acumulados
+            if (saltarMensajes === '1' && m.type === 'append') return
+
             const msg = m.messages[0]
             if (!msg || !msg.message) return
+
+            // Evitar procesar mensajes viejos si se activó el salto
+            if (saltarMensajes === '1' && msg.messageTimestamp && (Date.now() / 1000 - msg.messageTimestamp) > 60) return
 
             const from = msg.key.remoteJid
             const sender = msg.key.participant || msg.key.remoteJid
@@ -202,7 +235,7 @@ async function startBot() {
                 const args = body.slice(usedPrefix.length).trim().split(/ +/)
                 const command = args.shift().toLowerCase()
                 const text = args.join(' ')
-                const reply = (text) => conn.sendMessage(from, { text }, { quoted: msg })
+                const reply = (text) => conn.sendMessage(from, { text, contextInfo: iaContext }, { quoted: msg })
                 
                 switch (command) {
                     case 'menu':
@@ -230,7 +263,8 @@ async function startBot() {
                         
                         await conn.sendMessage(from, { 
                             image: { url: global.banner }, 
-                            caption: menu 
+                            caption: menu,
+                            contextInfo: iaContext
                         }, { quoted: msg })
                         break
                         
@@ -243,15 +277,16 @@ async function startBot() {
                         const ram = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)
                         
                         await conn.sendMessage(from, { 
-                            text: `*ESTADO DEL BOT*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}` 
+                            text: `*ESTADO DEL BOT*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}`,
+                            contextInfo: iaContext
                         }, { quoted: msg })
                         break
                         
                     case 'ping':
                     case 'p':
                         const start = Date.now()
-                        const { key } = await conn.sendMessage(from, { text: 'Calculando...' }, { quoted: msg })
-                        await conn.sendMessage(from, { text: `PONG!\nLatencia: ${Date.now() - start}ms`, edit: key })
+                        const { key } = await conn.sendMessage(from, { text: 'Calculando...', contextInfo: iaContext }, { quoted: msg })
+                        await conn.sendMessage(from, { text: `PONG!\nLatencia: ${Date.now() - start}ms`, edit: key, contextInfo: iaContext })
                         break
                         
                     case 'owner':
@@ -265,49 +300,36 @@ async function startBot() {
 Nombre: ${ownerName}
 Contacto: ${ownerNumber}
 
-――――――――――――――――――――` 
+――――――――――――――――――――`,
+                            contextInfo: iaContext
                         }, { quoted: msg })
                         break
 
-                                                                                  case 'tag':
+                    case 'tag':
                     case 'all':
                     case 'invocar': 
                     case '`': 
                         try {
-                            // 1. Validar que sea un grupo
                             if (!from.endsWith('@g.us')) {
-                                return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.', contextInfo: iaContext }, { quoted: msg })
                             }
 
                             const groupMetadata = await conn.groupMetadata(from)
                             const participants = groupMetadata.participants
-                            
-                            // Extraemos SOLO los números limpios de quien escribe
                             const senderNumber = sender.replace(/\D/g, '')
-                            
-                            // DETECCIÓN AUTOMÁTICA DEL BOT (OWNER)
-                            // conn.user.id contiene el JID del bot actual. Extraemos solo sus números.
                             const botNumber = String(conn.user?.id || '').replace(/\D/g, '')
-                            
-                            // Extraemos los números configurados en tu config.js por si acaso
-                            const ownerNumber = String(global.owner?.[0]?.[0] || '').replace(/\D/g, '')
-                            
-                            // Comprobaciones de permisos
+                            const ownerNumberConfig = String(global.owner?.[0]?.[0] || '').replace(/\D/g, '')
                             const isUserAdmin = participants.find(p => p.id === sender)?.admin !== null
-                            
-                            // BYPASS TOTAL: Entra si eres admin, si eres el número del bot actual, o si coincide con el config
-                            const isOwner = senderNumber === botNumber || senderNumber === ownerNumber || pushName === global.dev
+                            const isOwner = senderNumber === botNumber || senderNumber === ownerNumberConfig || pushName === global.dev
 
-                            // Si no es admin Y TAMPOCO eres tú (el dueño/bot), se bloquea
                             if (!isUserAdmin && !isOwner) {
-                                return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.', contextInfo: iaContext }, { quoted: msg })
                             }
 
                             const targetParticipants = participants.map(p => p.id).filter(Boolean)
                             const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
                             const quotedMsg = contextInfo?.quotedMessage
 
-                            // Si se está respondiendo a un mensaje (imagen, texto, audio, etc.)
                             if (quotedMsg) {
                                 const quotedType = Object.keys(quotedMsg)[0]
                                 const contentToForward = {}
@@ -315,6 +337,9 @@ Contacto: ${ownerNumber}
                                 
                                 if (!contentToForward.contextInfo) contentToForward.contextInfo = {}
                                 contentToForward.contextInfo.mentionedJid = targetParticipants
+                                // Mantener la etiqueta de IA al reenviar/invocar con cita
+                                contentToForward.contextInfo.isForwarded = true
+                                contentToForward.contextInfo.forwardedNewsletterMessageInfo = iaContext.forwardedNewsletterMessageInfo
 
                                 let customText = args.join(' ').trim()
                                 if (customText) {
@@ -327,30 +352,30 @@ Contacto: ${ownerNumber}
                                     }
                                 }
 
-                                // Se envía libre sin citarte para que no se vea feo
                                 return await conn.sendMessage(from, contentToForward)
                             }
 
-                            // Mensaje de texto normal si no se está respondiendo a nadie
                             let textMessage = args.join(' ').trim()
                             if (!textMessage) {
                                 return await conn.sendMessage(from, { 
-                                    text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n> O responde a un archivo/mensaje usando *${usedPrefix + command}*` 
+                                    text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n> O responde a un archivo/mensaje usando *${usedPrefix + command}*`,
+                                    contextInfo: iaContext
                                 }, { quoted: msg })
                             }
 
                             await conn.sendMessage(from, {
                                 text: textMessage,
-                                mentions: targetParticipants
+                                mentions: targetParticipants,
+                                contextInfo: iaContext
                             })
 
                         } catch (e) {
                             await conn.sendMessage(from, {
-                                text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
+                                text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`,
+                                contextInfo: iaContext
                             }, { quoted: msg })
                         }
                         break
-
 
                     case 'play':
                     case 'mp3':
@@ -359,7 +384,7 @@ Contacto: ${ownerNumber}
                     case 'playaudio':
                         try {
                             if (!args[0]) {
-                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video que deseas descargar' }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video que deseas descargar', contextInfo: iaContext }, { quoted: msg })
                             }
 
                             const input_text = args.join(' ').trim()
@@ -392,33 +417,36 @@ Contacto: ${ownerNumber}
                                     if (thumbnail) {
                                         await conn.sendMessage(from, {
                                             image: { url: thumbnail },
-                                            caption: info_message
+                                            caption: info_message,
+                                            contextInfo: iaContext
                                         }, { quoted: msg })
                                     } else {
-                                        await conn.sendMessage(from, { text: info_message }, { quoted: msg })
+                                        await conn.sendMessage(from, { text: info_message, contextInfo: iaContext }, { quoted: msg })
                                     }
                                 }
                             } catch {}
 
                             if (!isYTUrl(url)) {
-                                return await conn.sendMessage(from, { text: '《✧》No se encontro un video válido de YouTube.' }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '《✧》No se encontro un video válido de YouTube.', contextInfo: iaContext }, { quoted: msg })
                             }
 
                             const audio = await getAudioFromYoutubei(url)
 
                             if (!audio?.buffer?.length) {
-                                return await conn.sendMessage(from, { text: '《✧》No se pudo descargar el *audio*, intenta más tarde.' }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '《✧》No se pudo descargar el *audio*, intenta más tarde.', contextInfo: iaContext }, { quoted: msg })
                             }
 
                             await conn.sendMessage(from, {
                                 audio: audio.buffer,
                                 fileName: audio.name || `${sanitizeFileName(title)}.mp3`,
-                                mimetype: 'audio/mpeg'
+                                mimetype: 'audio/mpeg',
+                                contextInfo: iaContext
                             }, { quoted: msg })
 
                         } catch (e) {
                             await conn.sendMessage(from, {
-                                text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
+                                text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`,
+                                contextInfo: iaContext
                             }, { quoted: msg })
                         }
                         break

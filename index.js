@@ -207,13 +207,10 @@ async function startBot() {
 
     conn.ev.on('messages.upsert', async (m) => {
         try {
-            // Validar si el usuario eligió saltar los mensajes antiguos acumulados
-            if (saltarMensajes === '1' && m.type === 'append') return
-
             const msg = m.messages[0]
             if (!msg || !msg.message) return
 
-            // Evitar procesar mensajes viejos si se activó el salto
+            // Evitar procesar mensajes viejos si se activó el salto de historial (se calcula por tiempo)
             if (saltarMensajes === '1' && msg.messageTimestamp && (Date.now() / 1000 - msg.messageTimestamp) > 60) return
 
             const from = msg.key.remoteJid
@@ -337,7 +334,6 @@ Contacto: ${ownerNumber}
                                 
                                 if (!contentToForward.contextInfo) contentToForward.contextInfo = {}
                                 contentToForward.contextInfo.mentionedJid = targetParticipants
-                                // Mantener la etiqueta de IA al reenviar/invocar con cita
                                 contentToForward.contextInfo.isForwarded = true
                                 contentToForward.contextInfo.forwardedNewsletterMessageInfo = iaContext.forwardedNewsletterMessageInfo
 

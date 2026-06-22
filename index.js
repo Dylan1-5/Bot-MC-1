@@ -15,12 +15,6 @@ import { Readable } from 'stream'
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
 const question = (text) => new Promise((resolve) => rl.question(text, resolve))
 
-// Eliminamos el contexto de boletín de arriba y dejamos una marca de contexto limpia
-const iaContext = {
-    mentionedJid: [],
-    isForwarded: false
-}
-
 const decodeJid = (jid) => {
     if (!jid) return jid
     if (/:\d+@/gi.test(jid)) {
@@ -141,8 +135,7 @@ async function startBot() {
                 const command = args.shift().toLowerCase()
                 const text = args.join(' ')
                 
-                // Función de respuesta limpia sin el cartel de arriba, agregando una firma elegante abajo
-                const reply = (txt) => conn.sendMessage(from, { text: `${txt}\n\n*_Meta AI ✨_*`, contextInfo: iaContext }, { quoted: msg })
+                const reply = (txt) => conn.sendMessage(from, { text: txt }, { quoted: msg })
                 
                 switch (command) {
                     case 'menu':
@@ -166,13 +159,11 @@ async function startBot() {
 > Descargar audio 
 ● ${usedPrefix}tag
 > Mencionar a todos 
-
-_*Meta AI ✨_*`
+――――――――――――――――――――`
                         
                         await conn.sendMessage(from, { 
                             image: { url: global.banner }, 
-                            caption: menu,
-                            contextInfo: iaContext
+                            caption: menu
                         }, { quoted: msg })
                         break
                         
@@ -185,16 +176,15 @@ _*Meta AI ✨_*`
                         const ram = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)
                         
                         await conn.sendMessage(from, { 
-                            text: `*ESTADO DEL BOT*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}\n\n*_Meta AI ✨_*`,
-                            contextInfo: iaContext
+                            text: `*ESTADO DEL BOT*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}`
                         }, { quoted: msg })
                         break
                         
                     case 'ping':
                     case 'p':
                         const start = Date.now()
-                        const { key } = await conn.sendMessage(from, { text: 'Calculando... \n\n*_Meta AI ✨_*', contextInfo: iaContext }, { quoted: msg })
-                        await conn.sendMessage(from, { text: `PONG!\nLatencia: ${Date.now() - start}ms\n\n*_Meta AI ✨_*`, edit: key, contextInfo: iaContext })
+                        const { key } = await conn.sendMessage(from, { text: 'Calculando...' }, { quoted: msg })
+                        await conn.sendMessage(from, { text: `PONG!\nLatencia: ${Date.now() - start}ms`, edit: key })
                         break
                         
                     case 'owner':
@@ -203,8 +193,7 @@ _*Meta AI ✨_*`
                         const ownerNumber = global.owner[0][0]
                         const ownerName = global.dev
                         await conn.sendMessage(from, { 
-                            text: `INFORMACION OWNER\n\nNombre: ${ownerName}\nContacto: ${ownerNumber}\n\n――――――――――――――――――――\n*_Meta AI ✨_*`,
-                            contextInfo: iaContext
+                            text: `INFORMACION OWNER\n\nNombre: ${ownerName}\nContacto: ${ownerNumber}\n\n――――――――――――――――――――`
                         }, { quoted: msg })
                         break
 
@@ -214,7 +203,7 @@ _*Meta AI ✨_*`
                     case '`': 
                         try {
                             if (!from.endsWith('@g.us')) {
-                                return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.\n\n*_Meta AI ✨_*', contextInfo: iaContext }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
                             }
                             const groupMetadata = await conn.groupMetadata(from)
                             const participants = groupMetadata.participants
@@ -225,7 +214,7 @@ _*Meta AI ✨_*`
                             const isOwner = senderNumber === botNumber || senderNumber === ownerNumberConfig || pushName === global.dev
 
                             if (!isUserAdmin && !isOwner) {
-                                return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.\n\n*_Meta AI ✨_*', contextInfo: iaContext }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
                             }
 
                             const targetParticipants = participants.map(p => p.id).filter(Boolean)
@@ -243,11 +232,11 @@ _*Meta AI ✨_*`
                                 let customText = args.join(' ').trim()
                                 if (customText) {
                                     if (quotedType === 'conversation') {
-                                        contentToForward.conversation = `${customText}\n\n${contentToForward.conversation}\n\n*_Meta AI ✨_*`
+                                        contentToForward.conversation = `${customText}\n\n${contentToForward.conversation}`
                                     } else if (quotedType === 'extendedTextMessage') {
-                                        contentToForward.extendedTextMessage.text = `${customText}\n\n${contentToForward.extendedTextMessage.text}\n\n*_Meta AI ✨_*`
+                                        contentToForward.extendedTextMessage.text = `${customText}\n\n${contentToForward.extendedTextMessage.text}`
                                     } else if (contentToForward[quotedType] && 'caption' in contentToForward[quotedType]) {
-                                        contentToForward[quotedType].caption = `${customText}\n\n${contentToForward[quotedType].caption || ''}\n\n*_Meta AI ✨_*`
+                                        contentToForward[quotedType].caption = `${customText}\n\n${contentToForward[quotedType].caption || ''}`
                                     }
                                 }
                                 return await conn.sendMessage(from, contentToForward)
@@ -256,14 +245,12 @@ _*Meta AI ✨_*`
                             let textMessage = args.join(' ').trim()
                             if (!textMessage) {
                                 return await conn.sendMessage(from, { 
-                                    text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n\n*_Meta AI ✨_*`,
-                                    contextInfo: iaContext
+                                    text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje`
                                 }, { quoted: msg })
                             }
                             await conn.sendMessage(from, {
-                                text: `${textMessage}\n\n*_Meta AI ✨_*`,
-                                mentions: targetParticipants,
-                                contextInfo: iaContext
+                                text: textMessage,
+                                mentions: targetParticipants
                             })
                         } catch (e) {
                             reply(`Error: ${e.message}`)
@@ -277,7 +264,7 @@ _*Meta AI ✨_*`
                     case 'playaudio':
                         try {
                             if (!args[0]) {
-                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video.\n\n*_Meta AI ✨_*', contextInfo: iaContext }, { quoted: msg })
+                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video.' }, { quoted: msg })
                             }
                             const input_text = args.join(' ').trim()
                             const video_id = getVideoId(input_text)
@@ -301,12 +288,12 @@ _*Meta AI ✨_*`
 
 > ❖ Canal › *${channel}*
 > ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
-> ❒ Enlace › *${url}*\n\n*_Meta AI ✨_*`
+> ❒ Enlace › *${url}*`
 
                                     if (thumbnail) {
-                                        await conn.sendMessage(from, { image: { url: thumbnail }, caption: info_message, contextInfo: iaContext }, { quoted: msg })
+                                        await conn.sendMessage(from, { image: { url: thumbnail }, caption: info_message }, { quoted: msg })
                                     } else {
-                                        await conn.sendMessage(from, { text: info_message, contextInfo: iaContext }, { quoted: msg })
+                                        await conn.sendMessage(from, { text: info_message }, { quoted: msg })
                                     }
                                 }
                             } catch {}
@@ -318,8 +305,7 @@ _*Meta AI ✨_*`
                             await conn.sendMessage(from, {
                                 audio: audio.buffer,
                                 fileName: audio.name || `${sanitizeFileName(title)}.mp3`,
-                                mimetype: 'audio/mpeg',
-                                contextInfo: iaContext
+                                mimetype: 'audio/mpeg'
                             }, { quoted: msg })
                         } catch (e) {
                             reply(`Error: ${e.message}`)

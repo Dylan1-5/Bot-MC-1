@@ -116,24 +116,8 @@ async function startBot() {
     
     let opcion
     let phoneNumber = ""
-    let saltarMensajes = "1"
 
-    // Pregunta para saltar mensajes anteriores en Termux
-    do {
-        console.log('')
-        console.log(chalk.cyan('   -------------------------------'))
-        console.log(chalk.cyan('       CONFIGURACION DE HISTORIAL'))
-        console.log(chalk.cyan('   -------------------------------'))
-        console.log(chalk.white('   1) Saltar mensajes anteriores (Ignorar historial)'))
-        console.log(chalk.white('   2) No saltar mensajes anteriores (Responder todo)'))
-        console.log(chalk.cyan('   -------------------------------'))
-        process.stdout.write(chalk.white('   Selecciona opcion (1/2): '))
-        saltarMensajes = await question('')
-        if (!/^[1-2]$/.test(saltarMensajes)) {
-            console.log(chalk.red('   Solo opciones 1 o 2'))
-        }
-    } while (saltarMensajes !== '1' && saltarMensajes !== '2')
-
+    // Si no hay sesión guardada, salta directo a preguntar el método de conexión
     if (!fs.existsSync(`./sessions/creds.json`)) {
         do {
             console.log('')
@@ -209,9 +193,6 @@ async function startBot() {
         try {
             const msg = m.messages[0]
             if (!msg || !msg.message) return
-
-            // Evitar procesar mensajes viejos si se activó el salto de historial (se calcula por tiempo)
-            if (saltarMensajes === '1' && msg.messageTimestamp && (Date.now() / 1000 - msg.messageTimestamp) > 60) return
 
             const from = msg.key.remoteJid
             const sender = msg.key.participant || msg.key.remoteJid

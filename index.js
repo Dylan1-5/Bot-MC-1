@@ -307,12 +307,10 @@ Contacto: ${ownerNumber}
                             await conn.sendMessage(from, {
                                 text: textMessage,
                                 mentions: targetParticipants
-                            })
+                            }, { quoted: msg })
 
                         } catch (e) {
-                            await conn.sendMessage(from, {
-                                text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]`
-                            }, { node: msg })
+                            await conn.sendMessage(from, { text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]` }, { quoted: msg })
                         }
                         break
 
@@ -367,4 +365,99 @@ Contacto: ${ownerNumber}
 
                             await conn.sendMessage(from, {
                                 audio: { url: enlaceDirectoMp3 },
-                                fileName: `${title}.mp
+                                fileName: `${title}.mp3`,
+                                mimetype: 'audio/mpeg'
+                            }, { quoted: msg })
+
+                        } catch (e) {
+                            await conn.sendMessage(from, { text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]` }, { quoted: msg })
+                        }
+                        break
+
+                    case 'play2':
+                    case 'mp4':
+                    case 'ytmp4':
+                    case 'ytvideo':
+                    case 'playvideo':
+                        try {
+                            if (!args[0]) {
+                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video que deseas descargar' }, { quoted: msg })
+                            }
+
+                            const input_text = args.join(' ').trim()
+                            let videoIdBypass2 = null
+                            try { videoIdBypass2 = getVideoId(input_text) } catch {}
+                            
+                            const query = videoIdBypass2 ? `https://youtu.be/${videoIdBypass2}` : input_text
+                            let url = query
+                            let title = 'video'
+                            let thumbnail = null
+
+                            try {
+                                const search = await yts(query)
+                                const video_info = search.videos?.[0] || search.all?.find(v => v.type === 'video') || null
+
+                                if (video_info) {
+                                    url = video_info.url || `https://youtu.be/${video_info.videoId}`
+                                    title = video_info.title || title
+                                    thumbnail = video_info.image || video_info.thumbnail || null
+
+                                    const views = Number(video_info.views || 0).toLocaleString('es-HN')
+                                    const channel = video_info.author?.name || video_info.author || 'Desconocido'
+
+                                    const info_message = `➩ Descargando Video › *${title}*
+
+> ❖ Canal › *${channel}*
+> ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
+> ❀ Vistas › *${views}*
+> ✩ Publicado › *${video_info.ago || 'Desconocido'}*
+> ❒ Enlace › *${url}*`
+
+                                    if (thumbnail) {
+                                        await conn.sendMessage(from, { image: { url: thumbnail }, caption: info_message }, { quoted: msg })
+                                    } else {
+                                        await conn.sendMessage(from, { text: info_message }, { quoted: msg })
+                                    }
+                                }
+                            } catch {}
+
+                            const enlaceDirectoMp4 = await descargarYT(url, 'mp4')
+
+                            await conn.sendMessage(from, {
+                                video: { url: enlaceDirectoMp4 },
+                                fileName: `${title}.mp4`,
+                                mimetype: 'video/mp4'
+                            }, { quoted: msg })
+
+                        } catch (e) {
+                            await conn.sendMessage(from, { text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]` }, { quoted: msg })
+                        }
+                        break
+                        
+                    default:
+                        reply(`Comando no encontrado: *${command}*\n\nUsa *${usedPrefix}help* para ver los comandos disponibles`)
+                        break
+                }
+            }
+        } catch (err) { console.error(err) }
+    })
+
+    conn.ev.on('connection.update', (u) => {
+        if (u.connection === 'open') {
+            console.log(chalk.cyan('   -------------------------------'))
+            console.log(chalk.cyan(`    ${global.botName.toUpperCase()} CONECTADO`))
+            console.log(chalk.cyan('   -------------------------------'))
+            console.log(chalk.white(`   Owner: ${global.dev}`))
+            console.log(chalk.white(`   Prefijo: ${global.prefix[0]}`))
+            console.log(chalk.white('   Base: Corvette Script'))
+            console.log(chalk.white('   GitHub: github.com/ScriptGray'))
+            console.log(chalk.cyan('   -------------------------------\n'))
+        }
+        if (u.connection === 'close' && new Boom(u.lastDisconnect?.error)?.output.statusCode !== DisconnectReason.loggedOut) {
+            console.log(chalk.white('   Reconectando...'))
+            startBot()
+        }
+    })
+}
+
+startBot()

@@ -6,14 +6,10 @@ import { Boom } from '@hapi/boom'
 import fs, { existsSync } from 'fs'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
-import readline from 'readline'
 import yts from 'yt-search'
 import fetch from 'node-fetch'
 import { spawn } from 'child_process'
 import { Readable } from 'stream'
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-const question = (text) => new Promise((resolve) => rl.question(text, resolve))
 
 const decodeJid = (jid) => {
     if (!jid) return jid
@@ -44,45 +40,19 @@ async function isValidPhoneNumber(number) {
     }
 }
 
-function formatPhoneNumber(number) {
-    let num = String(number).trim().replace(/[^\d+]/g, '')
-    if (!num.startsWith('+')) num = '+' + num
-    if (num.startsWith('+52')) {
-        const digits = num.substring(3).replace(/\D/g, '')
-        if (digits.length === 10) return digits.startsWith('1') ? '+52' + digits : '+521' + digits
-        if (num.startsWith('+521') && num.length === 13) return num
-    }
-    return num
-}
-
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('sessions')
     const { version } = await fetchLatestBaileysVersion()
     
-    let opcion
-    let phoneNumber = ""
-
-    if (!fs.existsSync(`./sessions/creds.json`)) {
-        do {
-            console.log('')
-            console.log(chalk.cyan('   -------------------------------'))
-            console.log(chalk.cyan('   BASE DE BOT - CORVETTE SCRIPT'))
-            console.log(chalk.cyan('   -------------------------------'))
-            console.log(chalk.white('   METODO DE CONEXION'))
-            console.log(chalk.white('   1) Usar codigo QR'))
-            console.log(chalk.white('   2) Usar codigo de 8 digitos'))
-            console.log(chalk.cyan('   -------------------------------'))
-            process.stdout.write(chalk.white('   Selecciona opcion (1/2): '))
-            opcion = await question('')
-        } while (opcion !== '1' && opcion !== '2')
-    }
+    // Forzamos la opción 2 (Código de emparejamiento por número) automáticamente para la nube
+    let opcion = '2' 
 
     console.info = () => {}
 
     const conn = makeWASocket({
         version,
         logger: P({ level: 'silent' }),
-        printQRInTerminal: opcion === '1',
+        printQRInTerminal: false,
         auth: { 
             creds: state.creds, 
             keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' })) 
@@ -94,20 +64,34 @@ async function startBot() {
     
     conn.ev.on('creds.update', saveCreds)
 
+    // Si no hay sesión, lee tu número directamente desde la variable de entorno de Railway
     if (!fs.existsSync(`./sessions/creds.json`) && opcion === '2' && !conn.authState.creds.registered) {
-        do {
-            console.log(chalk.cyan('\n   INGRESA TU NUMERO DE WHATSAPP'))
-            process.stdout.write(chalk.white('   Numero: '))
-            phoneNumber = await question('')
-            phoneNumber = String(phoneNumber).replace(/\D/g, '')
-            if (!phoneNumber.startsWith('+')) phoneNumber = `+${phoneNumber}`
-        } while (!await isValidPhoneNumber(phoneNumber))
+        let phoneNumber = process.env.NUMERO; // Toma la variable que creaste en la web
+        
+        if (!phoneNumber) {
+            console.log(chalk.red('\n   [ERROR] No has configurado la variable NUMERO en Railway.\n'));
+            process.exit(1);
+        }
+
+        phoneNumber = String(phoneNumber).replace(/\D/g, '')
+        if (!phoneNumber.startsWith('+')) phoneNumber = `+${phoneNumber}`
+
+        if (!await isValidPhoneNumber(phoneNumber)) {
+            console.log(chalk.red(`\n   [ERROR] El número configurado (${phoneNumber}) no es válido.\n`));
+            process.exit(1);
+        }
+
         let addNumber = phoneNumber.replace(/\D/g, '')
+        console.log(chalk.cyan(`\n   Generando código de vinculación para el número: +${addNumber}...`))
+        
         setTimeout(async () => {
             let codeBot = await conn.requestPairingCode(addNumber)
             codeBot = codeBot.match(/.{1,4}/g)?.join("-") || codeBot
-            console.log(chalk.cyan('\n   CODIGO: ' + codeBot + '\n'))
-        }, 1000)
+            console.log(chalk.green('\n   ======================================'))
+            console.log(chalk.green('   TU CÓDIGO DE VINCULACIÓN ES:'))
+            console.log(chalk.white(`   👉   ${codeBot}   👈`))
+            console.log(chalk.green('   ======================================\n'))
+        }, 3000)
     }
 
     conn.ev.on('messages.upsert', async (m) => {

@@ -164,16 +164,8 @@ async function startBot() {
             const msg = m.messages[0]
             if (!msg || !msg.message) return
 
+            // Sistema limpio de lectura de comandos estándar (Igual al de tu base original)
             const from = msg.key.remoteJid
-            
-            // FILTRO DE DOBLE ENVÍO TOTALMENTE ARREGLADO Y SEGURO:
-            // Si el mensaje lo envías tú ("fromMe"), solo lo procesamos si estás escribiendo dentro de tu propio chat privado.
-            // Si es un mensaje tuyo en un grupo o en el chat de otra persona, lo ignoramos para que no responda doble ni rompa las sesiones.
-            if (msg.key.fromMe) {
-                const miJidLimpio = decodeJid(conn.user?.id)
-                if (from !== miJidLimpio) return
-            }
-
             const sender = msg.key.participant || msg.key.remoteJid
             const pushName = msg.pushName || 'Usuario'
             const type = Object.keys(msg.message)[0]
@@ -446,7 +438,10 @@ Contacto: ${ownerNumber}
                         break
                         
                     default:
-                        reply(`Comando no encontrado: *${command}*\n\nUsa *${usedPrefix}help* para ver los comandos disponibles`)
+                        // Evitar respuestas automáticas vacías que generen bucles en tu chat personal
+                        if (body.startsWith(usedPrefix)) {
+                            reply(`Comando no encontrado: *${command}*\n\nUsa *${usedPrefix}help* para ver los comandos disponibles`)
+                        }
                         break
                 }
             }

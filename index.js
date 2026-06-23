@@ -164,11 +164,18 @@ async function startBot() {
             const msg = m.messages[0]
             if (!msg || !msg.message) return
 
+            // CORRECCIÓN ANTIDOBLE: Evita procesar tus propios mensajes salientes enviados desde otros dispositivos vinculados, a menos que sea un chat contigo mismo de forma única.
+            if (msg.key.fromMe && msg.key.remoteJid !== conn.user?.id && !msg.key.remoteJid.endsWith('@g.us')) return
+
             const from = msg.key.remoteJid
             const sender = msg.key.participant || msg.key.remoteJid
             const pushName = msg.pushName || 'Usuario'
 
             const type = Object.keys(msg.message)[0]
+            
+            // Omitir mensajes de protocolo o estados para que no causen bucles
+            if (type === 'protocolMessage' || type === 'senderKeyDistributionMessage') return
+
             const body = (type === 'conversation' ? msg.message.conversation : 
                           type === 'extendedTextMessage' ? msg.message.extendedTextMessage.text : 
                           type === 'imageMessage' ? msg.message.imageMessage.caption : 

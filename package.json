@@ -11,12 +11,14 @@
   "author": "Corvette Script",
   "license": "MIT",
   "dependencies": {
-    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "@whiskeysockets/baileys": "^6.6.0",
     "@hapi/boom": "^10.0.1",
     "chalk": "^4.1.2",
-    "pino": "^8.14.1"
+    "pino": "^8.14.1",
+    "yt-search": "^2.11.1",
+    "node-fetch": "^3.3.2"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": "20.x"
   }
 }

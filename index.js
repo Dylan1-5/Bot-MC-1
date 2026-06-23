@@ -121,7 +121,7 @@ async function descargarYT(youtubeUrl, formato = 'mp3') {
 // FUNCIÓN PRINCIPAL DEL BOT
 // ==========================================
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('sessions')
+    const { state, saveCreds } = await useMultiFileAuthState('sessions_v2')
     const { version } = await fetchLatestBaileysVersion()
     
     console.info = () => {}

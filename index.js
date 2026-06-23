@@ -121,7 +121,7 @@ async function descargarYT(youtubeUrl, formato = 'mp3') {
 // FUNCIÓN PRINCIPAL DEL BOT
 // ==========================================
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('sessions_v2')
+    const { state, saveCreds } = await useMultiFileAuthState('sessions')
     const { version } = await fetchLatestBaileysVersion()
     
     console.info = () => {}
@@ -164,16 +164,20 @@ async function startBot() {
             const msg = m.messages[0]
             if (!msg || !msg.message) return
 
-            // CORRECCIÓN ANTIDOBLE: Evita procesar tus propios mensajes salientes enviados desde otros dispositivos vinculados, a menos que sea un chat contigo mismo de forma única.
-            if (msg.key.fromMe && msg.key.remoteJid !== conn.user?.id && !msg.key.remoteJid.endsWith('@g.us')) return
-
             const from = msg.key.remoteJid
+            
+            // FILTRO DE DOBLE ENVÍO TOTALMENTE ARREGLADO Y SEGURO:
+            // Si el mensaje lo envías tú ("fromMe"), solo lo procesamos si estás escribiendo dentro de tu propio chat privado.
+            // Si es un mensaje tuyo en un grupo o en el chat de otra persona, lo ignoramos para que no responda doble ni rompa las sesiones.
+            if (msg.key.fromMe) {
+                const miJidLimpio = decodeJid(conn.user?.id)
+                if (from !== miJidLimpio) return
+            }
+
             const sender = msg.key.participant || msg.key.remoteJid
             const pushName = msg.pushName || 'Usuario'
-
             const type = Object.keys(msg.message)[0]
             
-            // Omitir mensajes de protocolo o estados para que no causen bucles
             if (type === 'protocolMessage' || type === 'senderKeyDistributionMessage') return
 
             const body = (type === 'conversation' ? msg.message.conversation : 

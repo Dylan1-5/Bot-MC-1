@@ -1,15 +1,11 @@
 import './config.js'
-import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys'
+import { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, makeCacheableSignalKeyStore, delay } from '@whiskeysockets/baileys'
 import P from 'pino'
 import chalk from 'chalk'
 import { Boom } from '@hapi/boom'
 import fs from 'fs'
 import yts from 'yt-search'
 import fetch from 'node-fetch'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-
-const execPromise = promisify(exec)
 
 const decodeJid = (jid) => {
     if (!jid) return jid
@@ -18,6 +14,15 @@ const decodeJid = (jid) => {
         return jid.replace(decode[0], '@')
     }
     return jid
+}
+
+// ==========================================
+// CONFIGURACIÓN DINÁMICA DESDE VARIABLES
+// ==========================================
+const CONFIG = {
+    ytApi: process.env.YT_API_URL || 'https://api.vreden.web.id',
+    bannerEnabled: process.env.BANNER_ENABLED !== 'false', // Por defecto activado
+    botName: process.env.BOT_NAME || global.botName || 'Bot-MC-1'
 }
 
 // ==========================================
@@ -41,45 +46,49 @@ const getVideoId = url => {
 }
 
 // ==========================================
-// MOTOR DE DESCARGA OPTIMIZADO PARA APIS (RAILWAY)
+// MOTOR DE DESCARGA MULTI-API (RAILWAY)
 // ==========================================
 async function descargarYT(youtubeUrl, formato = 'mp3') {
     const id = getVideoId(youtubeUrl)
     const urlCompleta = `https://www.youtube.com/watch?v=${id}`
+    const apiBase = CONFIG.ytApi.replace(/\/$/, '') // Limpia barras diagonales al final
     
     if (formato === 'mp3') {
         try {
-            const res = await fetch(`https://api.vreden.web.id/api/ytmp3?url=${urlCompleta}`)
+            const res = await fetch(`${apiBase}/api/ytmp3?url=${urlCompleta}`)
             const json = await res.json()
-            if (json.status === 200 && json.result?.downloadUrl) return { tipo: 'url', stream: json.result.downloadUrl }
+            const link = json.result?.downloadUrl || json.data?.downloadUrl || json.result
+            if (link) return link
         } catch (e) {
-            console.log(chalk.yellow('[API Audio Principal falló, intentando alternativa...]'))
+            console.log(chalk.yellow('[API Principal falló, intentando respaldo Agustina...]'))
         }
         
-        // Intento con comando local por si Railway tiene instalado yt-dlp
         try {
-            const output = `./${id}.mp3`
-            await execPromise(`yt-dlp -x --audio-format mp3 -o "${output}" "${urlCompleta}"`)
-            return { tipo: 'local', stream: output }
-        } catch (err) {
-            throw new Error('No se pudo descargar el audio. Todas las vías fallaron.')
+            const res = await fetch(`https://api.agatz.xyz/api/ytmp3?url=${urlCompleta}`)
+            const json = await res.json()
+            const link = json.data?.downloadUrl || json.result
+            if (link) return link
+        } catch (e) {
+            throw new Error('Todas las APIs de audio fallaron.')
         }
 
     } else {
         try {
-            const res = await fetch(`https://api.vreden.web.id/api/ytmp4?url=${urlCompleta}`)
+            const res = await fetch(`${apiBase}/api/ytmp4?url=${urlCompleta}`)
             const json = await res.json()
-            if (json.status === 200 && json.result?.downloadUrl) return { tipo: 'url', stream: json.result.downloadUrl }
+            const link = json.result?.downloadUrl || json.data?.downloadUrl || json.result
+            if (link) return link
         } catch (e) {
-            console.log(chalk.yellow('[API Video Principal falló, intentando alternativa...]'))
+            console.log(chalk.yellow('[API Principal falló, intentando respaldo...]'))
         }
         
         try {
-            const output = `./${id}.mp4`
-            await execPromise(`yt-dlp -f "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]" --merge-output-format mp4 -o "${output}" "${urlCompleta}"`)
-            return { tipo: 'local', stream: output }
-        } catch (err) {
-            throw new Error('No se pudo descargar el video. Todas las vías fallaron.')
+            const res = await fetch(`https://api.agatz.xyz/api/ytmp4?url=${urlCompleta}`)
+            const json = await res.json()
+            const link = json.data?.downloadUrl || json.result
+            if (link) return link
+        } catch (e) {
+            throw new Error('Todas las APIs de video fallaron.')
         }
     }
 }
@@ -109,9 +118,8 @@ async function startBot() {
     
     conn.ev.on('creds.update', saveCreds)
 
-    // OBTENCIÓN AUTOMÁTICA DEL NÚMERO EN RAILWAY
+    // OBTENCIÓN AUTOMÁTICA DEL NÚMERO
     if (!fs.existsSync(`./${authFolder}/creds.json`) && !conn.authState.creds.registered) {
-        // Busca el número en tus variables de Railway (NUMERO) o usa el del Owner en config.js
         let phoneNumber = process.env.NUMERO || global.owner?.[0]?.[0] || ''
         phoneNumber = phoneNumber.replace(/[\s\-()+]/g, '')
 
@@ -135,7 +143,6 @@ async function startBot() {
             }, 3000)
         } else {
             console.log(chalk.red('\n[!] Error: No se configuró un número válido en Railway.'))
-            console.log(chalk.yellow('Asegúrate de crear una variable de entorno llamada NUMERO con tu número de WhatsApp (ej: 50688888888).\n'))
             process.exit(1)
         }
     }
@@ -168,13 +175,20 @@ async function startBot() {
             if (usedPrefix !== undefined) {
                 const args = body.slice(usedPrefix.length).trim().split(/ +/)
                 const command = args.shift().toLowerCase()
-                const reply = (text) => conn.sendMessage(from, { text }, { quoted: msg })
+                
+                // FUNCIÓN DE RESPUESTA CON SIMULACIÓN DE "ESCRIBIENDO..."
+                const reply = async (text) => {
+                    await conn.sendPresenceUpdate('composing', from)
+                    await delay(1500)
+                    await conn.sendPresenceUpdate('paused', from)
+                    return conn.sendMessage(from, { text }, { quoted: msg })
+                }
                 
                 switch (command) {
                     case 'menu':
                     case 'help':
                     case 'ayuda':
-                        const menu = `¡Hola! *${pushName}*, soy *${global.botName}*
+                        const menu = `¡Hola! *${pushName}*, soy *${CONFIG.botName}*
 
 ● Prefijo: ${usedPrefix}
 ● Owner: ${global.dev}
@@ -196,6 +210,10 @@ async function startBot() {
 > Mencionar a todos 
 ――――――――――――――――――――`
                         
+                        await conn.sendPresenceUpdate('composing', from)
+                        await delay(2000)
+                        await conn.sendPresenceUpdate('paused', from)
+                        
                         await conn.sendMessage(from, { 
                             image: { url: global.banner }, 
                             caption: menu 
@@ -210,14 +228,14 @@ async function startBot() {
                         const s = Math.floor(uptime % 60)
                         const ram = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)
                         
-                        await conn.sendMessage(from, { 
-                            text: `*ESTADO DEL BOT (RAILWAY)*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}` 
-                        }, { quoted: msg })
+                        await reply(`*ESTADO DEL BOT (RAILWAY)*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}`)
                         break
                         
                     case 'ping':
                     case 'p':
                         const start = Date.now()
+                        await conn.sendPresenceUpdate('composing', from)
+                        await delay(500)
                         const { key } = await conn.sendMessage(from, { text: 'Calculando...' }, { quoted: msg })
                         await conn.sendMessage(from, { text: `PONG!\nLatencia: ${Date.now() - start}ms`, edit: key })
                         break
@@ -227,9 +245,7 @@ async function startBot() {
                     case 'dueño':
                         const ownerNumber = global.owner[0][0]
                         const ownerName = global.dev
-                        await conn.sendMessage(from, { 
-                            text: `INFORMACION OWNER\n\nNombre: ${ownerName}\nContacto: ${ownerNumber}\n\n――――――――――――――――――――` 
-                        }, { quoted: msg })
+                        await reply(`INFORMACION OWNER\n\nNombre: ${ownerName}\nContacto: ${ownerNumber}\n\n――――――――――――――――――――`)
                         break
 
                     case 'tag':
@@ -252,6 +268,9 @@ async function startBot() {
                             const targetParticipants = participants.map(p => p.id).filter(Boolean)
                             const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
                             const quotedMsg = contextInfo?.quotedMessage
+
+                            await conn.sendPresenceUpdate('composing', from)
+                            await delay(1500)
 
                             if (quotedMsg) {
                                 const quotedType = Object.keys(quotedMsg)[0]
@@ -283,35 +302,52 @@ async function startBot() {
                             if (!args[0]) return reply('《✧》Por favor, menciona el nombre o URL de la música.')
                             const input_text = args.join(' ').trim()
                             
-                            let videoUrl = ''
-                            let videoTitle = 'Audio'
-                            let videoImage = global.banner
-
-                            if (input_text.includes('youtube.com') || input_text.includes('youtu.be')) {
-                                videoUrl = input_text
-                            } else {
-                                const search = await yts(input_text).catch(() => null)
-                                const video = search?.videos?.[0]
-                                if (!video) return reply('❌ Error: No se pudo obtener el token de YouTube. Intenta de nuevo usando un enlace directo.')
-                                videoUrl = video.url
-                                videoTitle = video.title
-                                videoImage = video.image
+                            // OPCIONES CON USER-AGENT QUE SIMULAN UN NAVEGADOR HUMANO EN CR
+                            const searchOptions = {
+                                hl: 'es',
+                                gl: 'CR',
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                                    'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+                                    'Referer': 'https://www.google.com/'
+                                }
                             }
 
-                            await conn.sendMessage(from, { image: { url: videoImage }, caption: `➩ Descargando Audio › *${videoTitle}*` }, { quoted: msg })
+                            let search = await yts({ query: input_text, ...searchOptions }).catch(() => null)
+                            let video = search?.videos?.[0]
+                            if (!video) return reply('❌ No se encontraron resultados. Intenta de nuevo o prueba con un enlace directo.')
+
+                            if (CONFIG.bannerEnabled) {
+                                const captionInfo = `➩ *Descargando:*
+${video.title}
+
+│ ❖ *Canal:* ${video.author.name}
+│ ⏳ *Duración:* ${video.timestamp}
+│ ❀ *Vistas:* ${video.views.toLocaleString()}
+│ ☆ *Publicado:* ${video.ago}
+│ 🔗 *Enlace:* ${video.url}`
+
+                                await conn.sendPresenceUpdate('composing', from)
+                                await delay(1000)
+                                await conn.sendMessage(from, { image: { url: video.image }, caption: captionInfo }, { quoted: msg })
+                            }
                             
-                            const resultado = await descargarYT(videoUrl, 'mp3')
-                            const configAudio = {
-                                audio: resultado.tipo === 'url' ? { url: resultado.stream } : fs.readFileSync(resultado.stream),
-                                fileName: `${videoTitle}.mp3`,
+                            // SIMULACIÓN GRABANDO AUDIO
+                            await conn.sendPresenceUpdate('recording', from)
+                            
+                            const downloadUrl = await descargarYT(video.url, 'mp3')
+                            
+                            await conn.sendMessage(from, {
+                                audio: { url: downloadUrl },
+                                fileName: `${video.title}.mp3`,
                                 mimetype: 'audio/mpeg'
-                            }
+                            }, { quoted: msg })
                             
-                            await conn.sendMessage(from, configAudio, { quoted: msg })
-                            if (resultado.tipo === 'local') fs.unlinkSync(resultado.stream)
+                            await conn.sendPresenceUpdate('paused', from)
 
                         } catch (e) { 
-                            reply(`[Error]: ${e.message}\n\n💡 Consejo: Si la búsqueda falla por restricciones de YouTube, pásame el enlace directo del video.`) 
+                            await conn.sendPresenceUpdate('paused', from)
+                            reply(`[Error]: ${e.message}\n\n💡 Intenta de nuevo o prueba usando un enlace directo de YouTube.`) 
                         }
                         break
 
@@ -321,35 +357,51 @@ async function startBot() {
                             if (!args[0]) return reply('《✧》Por favor, menciona el nombre o URL del video.')
                             const input_text = args.join(' ').trim()
                             
-                            let videoUrl = ''
-                            let videoTitle = 'Video'
-                            let videoImage = global.banner
-
-                            if (input_text.includes('youtube.com') || input_text.includes('youtu.be')) {
-                                videoUrl = input_text
-                            } else {
-                                const search = await yts(input_text).catch(() => null)
-                                const video = search?.videos?.[0]
-                                if (!video) return reply('❌ Error: No se pudo obtener el token de YouTube. Intenta de nuevo usando un enlace directo.')
-                                videoUrl = video.url
-                                videoTitle = video.title
-                                videoImage = video.image
+                            const searchOptions = {
+                                hl: 'es',
+                                gl: 'CR',
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+                                    'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+                                    'Referer': 'https://www.google.com/'
+                                }
                             }
 
-                            await conn.sendMessage(from, { image: { url: videoImage }, caption: `➩ Descargando Video › *${videoTitle}*` }, { quoted: msg })
+                            let search = await yts({ query: input_text, ...searchOptions }).catch(() => null)
+                            let video = search?.videos?.[0]
+                            if (!video) return reply('❌ No se encontraron resultados. Intenta de nuevo o prueba con un enlace directo.')
+
+                            if (CONFIG.bannerEnabled) {
+                                const captionInfo = `➩ *Descargando Video:*
+${video.title}
+
+│ ❖ *Canal:* ${video.author.name}
+│ ⏳ *Duración:* ${video.timestamp}
+│ ❀ *Vistas:* ${video.views.toLocaleString()}
+│ ☆ *Publicado:* ${video.ago}
+│ 🔗 *Enlace:* ${video.url}`
+
+                                await conn.sendPresenceUpdate('composing', from)
+                                await delay(1000)
+                                await conn.sendMessage(from, { image: { url: video.image }, caption: captionInfo }, { quoted: msg })
+                            }
                             
-                            const resultado = await descargarYT(videoUrl, 'mp4')
-                            const configVideo = {
-                                video: resultado.tipo === 'url' ? { url: resultado.stream } : fs.readFileSync(resultado.stream),
-                                fileName: `${videoTitle}.mp4`,
+                            // SIMULACIÓN ESCRIBIENDO MIENTRAS ENVÍA VIDEO
+                            await conn.sendPresenceUpdate('composing', from)
+                            
+                            const downloadUrl = await descargarYT(video.url, 'mp4')
+                            
+                            await conn.sendMessage(from, {
+                                video: { url: downloadUrl },
+                                fileName: `${video.title}.mp4`,
                                 mimetype: 'video/mp4'
-                            }
+                            }, { quoted: msg })
                             
-                            await conn.sendMessage(from, configVideo, { quoted: msg })
-                            if (resultado.tipo === 'local') fs.unlinkSync(resultado.stream)
+                            await conn.sendPresenceUpdate('paused', from)
 
                         } catch (e) { 
-                            reply(`[Error]: ${e.message}\n\n💡 Consejo: Si la búsqueda falla por restricciones de YouTube, pásame el enlace directo del video.`) 
+                            await conn.sendPresenceUpdate('paused', from)
+                            reply(`[Error]: ${e.message}\n\n💡 Intenta de nuevo o prueba usando un enlace directo de YouTube.`) 
                         }
                         break
                         

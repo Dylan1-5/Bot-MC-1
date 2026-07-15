@@ -6,7 +6,10 @@ import { Boom } from '@hapi/boom'
 import fs from 'fs'
 import yts from 'yt-search'
 import fetch from 'node-fetch'
-import crypto from 'crypto'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execPromise = promisify(exec)
 
 const decodeJid = (jid) => {
     if (!jid) return jid
@@ -17,111 +20,76 @@ const decodeJid = (jid) => {
     return jid
 }
 
+// ==========================================
+// FUNCIÓN DE VALIDACIÓN UNIVERSAL DE NÚMEROS
+// ==========================================
 async function isValidPhoneNumber(number) {
     try {
-        let num = String(number).trim()
-        num = num.replace(/[\s\-()]/g, '')
-        if (!num.startsWith('+')) num = '+' + num
-        if (num.startsWith('+52')) {
-            const digits = num.substring(3)
-            if (num.startsWith('+521') && num.length === 13) return /^\+521[0-9]{10}$/.test(num)
-            else if (num.length === 12) {
-                const numDigits = digits.replace(/\D/g, '')
-                if (numDigits.length === 10) return true
-            }
-            else if (digits.length === 10 && /^[0-9]{10}$/.test(digits)) return true
-        }
-        return /^\+[1-9]\d{9,14}$/.test(num)
+        let num = String(number).trim().replace(/[\s\-()+]/g, '')
+        const isNumeric = /^\d+$/.test(num)
+        const isLengthValid = num.length >= 7 && num.length <= 15
+        return isNumeric && isLengthValid
     } catch (error) {
         return false
     }
 }
 
-// ==========================================
-// MOTOR DE DESCARGA AVANZADO (SOYMAYCOL SYSTEM)
-// ==========================================
 const getVideoId = url => {
     const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/)
     if (!match) throw new Error('No se pudo extraer el videoId')
     return match[1]
 }
 
-const S = s => crypto.createHash('sha256').update(s).digest('hex')
-const HM = (k, d) => crypto.createHmac('sha256', k).update(d).digest('hex')
-
+// ==========================================
+// MOTOR DE DESCARGA OPTIMIZADO PARA APIS (RAILWAY)
+// ==========================================
 async function descargarYT(youtubeUrl, formato = 'mp3') {
     const id = getVideoId(youtubeUrl)
-    const B = 'https://embed.dlsrv.online'
-    const calidad = formato === 'mp4' ? '720' : '320'
+    const urlCompleta = `https://www.youtube.com/watch?v=${id}`
     
-    const H = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Origin': B,
-        'Referer': `${B}/v1/full?videoId=${id}`,
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin'
+    if (formato === 'mp3') {
+        try {
+            const res = await fetch(`https://api.vreden.web.id/api/ytmp3?url=${urlCompleta}`)
+            const json = await res.json()
+            if (json.status === 200 && json.result?.downloadUrl) return { tipo: 'url', stream: json.result.downloadUrl }
+        } catch (e) {
+            console.log(chalk.yellow('[API Audio Principal falló, intentando alternativa...]'))
+        }
+        
+        // Intento con comando local por si Railway tiene instalado yt-dlp
+        try {
+            const output = `./${id}.mp3`
+            await execPromise(`yt-dlp -x --audio-format mp3 -o "${output}" "${urlCompleta}"`)
+            return { tipo: 'local', stream: output }
+        } catch (err) {
+            throw new Error('No se pudo descargar el audio. Todas las vías fallaron.')
+        }
+
+    } else {
+        try {
+            const res = await fetch(`https://api.vreden.web.id/api/ytmp4?url=${urlCompleta}`)
+            const json = await res.json()
+            if (json.status === 200 && json.result?.downloadUrl) return { tipo: 'url', stream: json.result.downloadUrl }
+        } catch (e) {
+            console.log(chalk.yellow('[API Video Principal falló, intentando alternativa...]'))
+        }
+        
+        try {
+            const output = `./${id}.mp4`
+            await execPromise(`yt-dlp -f "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]" --merge-output-format mp4 -o "${output}" "${urlCompleta}"`)
+            return { tipo: 'local', stream: output }
+        } catch (err) {
+            throw new Error('No se pudo descargar el video. Todas las vías fallaron.')
+        }
     }
-
-    const d = {
-        ua: H['User-Agent'], lang: 'en-US', languages: 'en-US,en',
-        screen: { w: 1920, h: 1080, cd: 24 }, tzOffset: '-300',
-        tz: 'America/New_York', hc: '12', dm: '8', chrome: 'true',
-        canvasHash: '', webdriver: 'false', GPU: '', gpuVendor: ''
-    }
-
-    const fp = S([d.ua, d.lang, d.languages, `${d.screen.w}x${d.screen.h}x${d.screen.cd}`, d.tzOffset, d.tz, d.hc, d.dm, d.chrome, d.canvasHash].join('|'))
-
-    const p = await (await fetch(`${B}/v1/full?videoId=${id}`, { headers: H })).text()
-    const tknMatch = p.match(/data-token="([^"]+)"/)
-    if (!tknMatch) throw new Error('No se pudo obtener el token de inicialización.')
-    const tkn = tknMatch[1]
-
-    const ch = await (await fetch(`${B}/api/challenge`, { method: 'POST', headers: H })).json()
-
-    let n = 0n
-    const pfx = '0'.repeat(ch.difficulty)
-    while (!S(`${ch.salt}:${ch.ts}:${n}`).startsWith(pfx)) n++
-
-    const v = await (await fetch(`${B}/api/verify`, {
-        method: 'POST',
-        headers: H,
-        body: JSON.stringify({
-            initToken: tkn, fpHash: fp, fpDetails: d, salt: ch.salt, ts: ch.ts,
-            signature: ch.signature, nonce: n.toString(),
-            telemetry: { interactions: 10, timeToVerify: 5000 }
-        })
-    })).json()
-
-    if (!v.token) throw new Error('Verificación de bypass fallida.')
-
-    const ts = Date.now().toString()
-    const sig = HM(v.token.slice(-32), `${ts}:${id}`)
-
-    const endpoint = formato === 'mp4' ? '/api/download/mp4' : '/api/download/mp3'
-
-    const dl = await (await fetch(`${B}${endpoint}`, {
-        method: 'POST',
-        headers: {
-            ...H,
-            'Authorization': `Bearer ${v.token}`,
-            'x-fp': fp, 'x-ts': ts, 'x-sig': sig
-        },
-        body: JSON.stringify({ videoId: id, format: formato, quality: calidad })
-    })).json()
-
-    if (!dl.url) throw new Error('La API de bypass no devolvió un enlace de descarga válido.')
-    return dl.url
 }
 
 // ==========================================
 // FUNCIÓN PRINCIPAL DEL BOT
 // ==========================================
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('sessions')
+    const authFolder = 'sessions'
+    const { state, saveCreds } = await useMultiFileAuthState(authFolder)
     const { version } = await fetchLatestBaileysVersion()
     
     console.info = () => {}
@@ -129,42 +97,57 @@ async function startBot() {
     const conn = makeWASocket({
         version,
         logger: P({ level: 'silent' }),
-        printQRInTerminal: false,
+        printQRInTerminal: false, 
         auth: { 
             creds: state.creds, 
             keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' })) 
         },
-        browser: ["Ubuntu", "Chrome", "110.0.5481.178"],
+        browser: ["Ubuntu", "Chrome", "125.0.0.0"],
         syncFullHistory: false,
         markOnlineOnConnect: true
     })
     
     conn.ev.on('creds.update', saveCreds)
 
-    if (!fs.existsSync(`./sessions/creds.json`) && !conn.authState.creds.registered) {
-        let phoneNumber = process.env.NUMERO || ""; 
-        if (phoneNumber) {
-            phoneNumber = String(phoneNumber).replace(/\D/g, '')
-            if (await isValidPhoneNumber(phoneNumber)) {
-                console.log(chalk.cyan(`\n   Generando código de vinculación para: +${phoneNumber}...`))
-                setTimeout(async () => {
+    // OBTENCIÓN AUTOMÁTICA DEL NÚMERO EN RAILWAY
+    if (!fs.existsSync(`./${authFolder}/creds.json`) && !conn.authState.creds.registered) {
+        // Busca el número en tus variables de Railway (NUMERO) o usa el del Owner en config.js
+        let phoneNumber = process.env.NUMERO || global.owner?.[0]?.[0] || ''
+        phoneNumber = phoneNumber.replace(/[\s\-()+]/g, '')
+
+        if (await isValidPhoneNumber(phoneNumber)) {
+            console.log(chalk.cyan('\n======================================'))
+            console.log(chalk.cyan('   GENERANDO CÓDIGO DE VINCULACIÓN'))
+            console.log(chalk.cyan(`   Número detectado: +${phoneNumber}`))
+            console.log(chalk.cyan('======================================\n'))
+
+            setTimeout(async () => {
+                try {
                     let codeBot = await conn.requestPairingCode(phoneNumber)
                     codeBot = codeBot.match(/.{1,4}/g)?.join("-") || codeBot
-                    console.log(chalk.green('\n   ======================================'))
-                    console.log(chalk.green('   TU CÓDIGO DE VINCULACIÓN ES:'))
-                    console.log(chalk.white(`   👉   ${codeBot}   👈`))
-                    console.log(chalk.green('   ======================================\n'))
-                }, 3000)
-            }
+                    console.log(chalk.green('\n======================================'))
+                    console.log(chalk.green('🔑 TU CÓDIGO DE VINCULACIÓN EN RAILWAY ES:'))
+                    console.log(chalk.white(`👉   ${codeBot}   👈`))
+                    console.log(chalk.green('======================================\n'))
+                } catch (err) {
+                    console.error(chalk.red('❌ Error al solicitar código en Railway:'), err)
+                }
+            }, 3000)
+        } else {
+            console.log(chalk.red('\n[!] Error: No se configuró un número válido en Railway.'))
+            console.log(chalk.yellow('Asegúrate de crear una variable de entorno llamada NUMERO con tu número de WhatsApp (ej: 50688888888).\n'))
+            process.exit(1)
         }
     }
 
+    // ==========================================
+    // ESCUCHADOR DE MENSAJES Y COMANDOS
+    // ==========================================
     conn.ev.on('messages.upsert', async (m) => {
         try {
             const msg = m.messages[0]
             if (!msg || !msg.message) return
 
-            // Sistema limpio de lectura de comandos estándar (Igual al de tu base original)
             const from = msg.key.remoteJid
             const sender = msg.key.participant || msg.key.remoteJid
             const pushName = msg.pushName || 'Usuario'
@@ -228,7 +211,7 @@ async function startBot() {
                         const ram = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)
                         
                         await conn.sendMessage(from, { 
-                            text: `*ESTADO DEL BOT*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}` 
+                            text: `*ESTADO DEL BOT (RAILWAY)*\n\n• Uptime: ${h}h ${m}m ${s}s\n• RAM: ${ram} MB\n• Node.js: ${process.version}\n• Owner: ${global.dev}` 
                         }, { quoted: msg })
                         break
                         
@@ -245,12 +228,7 @@ async function startBot() {
                         const ownerNumber = global.owner[0][0]
                         const ownerName = global.dev
                         await conn.sendMessage(from, { 
-                            text: `INFORMACION OWNER
-
-Nombre: ${ownerName}
-Contacto: ${ownerNumber}
-
-――――――――――――――――――――` 
+                            text: `INFORMACION OWNER\n\nNombre: ${ownerName}\nContacto: ${ownerNumber}\n\n――――――――――――――――――――` 
                         }, { quoted: msg })
                         break
 
@@ -259,9 +237,7 @@ Contacto: ${ownerNumber}
                     case 'invocar': 
                     case '`': 
                         try {
-                            if (!from.endsWith('@g.us')) {
-                                return await conn.sendMessage(from, { text: '「✎」 Este comando solo funciona en grupos.' }, { quoted: msg })
-                            }
+                            if (!from.endsWith('@g.us')) return reply('「✎」 Este comando solo funciona en grupos.')
 
                             const groupMetadata = await conn.groupMetadata(from)
                             const participants = groupMetadata.participants
@@ -271,9 +247,7 @@ Contacto: ${ownerNumber}
                             const isUserAdmin = participants.find(p => p.id === sender)?.admin !== null
                             const isOwner = senderNumber === botNumber || senderNumber === ownerNumberConfig || pushName === global.dev
 
-                            if (!isUserAdmin && !isOwner) {
-                                return await conn.sendMessage(from, { text: '「✎」 Este comando es solo para Administradores del grupo.' }, { quoted: msg })
-                            }
+                            if (!isUserAdmin && !isOwner) return reply('「✎」 Este comando es solo para Administradores.')
 
                             const targetParticipants = participants.map(p => p.id).filter(Boolean)
                             const contextInfo = msg.message?.extendedTextMessage?.contextInfo || msg.message?.[type]?.contextInfo
@@ -289,181 +263,123 @@ Contacto: ${ownerNumber}
 
                                 let customText = args.join(' ').trim()
                                 if (customText) {
-                                    if (quotedType === 'conversation') {
-                                        contentToForward.conversation = `${customText}\n\n${contentToForward.conversation}`
-                                    } else if (quotedType === 'extendedTextMessage') {
-                                        contentToForward.extendedTextMessage.text = `${customText}\n\n${contentToForward.extendedTextMessage.text}`
-                                    } else if (contentToForward[quotedType] && 'caption' in contentToForward[quotedType]) {
-                                        contentToForward[quotedType].caption = `${customText}\n\n${contentToForward[quotedType].caption || ''}`
-                                    }
+                                    if (quotedType === 'conversation') contentToForward.conversation = `${customText}\n\n${contentToForward.conversation}`
+                                    else if (quotedType === 'extendedTextMessage') contentToForward.extendedTextMessage.text = `${customText}\n\n${contentToForward.extendedTextMessage.text}`
+                                    else if (contentToForward[quotedType] && 'caption' in contentToForward[quotedType]) contentToForward[quotedType].caption = `${customText}\n\n${contentToForward[quotedType].caption || ''}`
                                 }
                                 return await conn.sendMessage(from, contentToForward)
                             }
 
                             let textMessage = args.join(' ').trim()
-                            if (!textMessage) {
-                                return await conn.sendMessage(from, { 
-                                    text: `「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje\n> O responde a un archivo/mensaje usando *${usedPrefix + command}*` 
-                                }, { quoted: msg })
-                            }
+                            if (!textMessage) return reply(`「✎」 Uso correcto:\n\n> *${usedPrefix + command}* mensaje`)
 
-                            await conn.sendMessage(from, {
-                                text: textMessage,
-                                mentions: targetParticipants
-                            }, { quoted: msg })
-
-                        } catch (e) {
-                            await conn.sendMessage(from, { text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]` }, { quoted: msg })
-                        }
+                            await conn.sendMessage(from, { text: textMessage, mentions: targetParticipants }, { quoted: msg })
+                        } catch (e) { reply(`[Error]: ${e.message}`) }
                         break
 
                     case 'play':
                     case 'mp3':
-                    case 'ytmp3':
-                    case 'ytaudio':
-                    case 'playaudio':
                         try {
-                            if (!args[0]) {
-                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video que deseas descargar' }, { quoted: msg })
+                            if (!args[0]) return reply('《✧》Por favor, menciona el nombre o URL de la música.')
+                            const input_text = args.join(' ').trim()
+                            
+                            let videoUrl = ''
+                            let videoTitle = 'Audio'
+                            let videoImage = global.banner
+
+                            if (input_text.includes('youtube.com') || input_text.includes('youtu.be')) {
+                                videoUrl = input_text
+                            } else {
+                                const search = await yts(input_text).catch(() => null)
+                                const video = search?.videos?.[0]
+                                if (!video) return reply('❌ Error: No se pudo obtener el token de YouTube. Intenta de nuevo usando un enlace directo.')
+                                videoUrl = video.url
+                                videoTitle = video.title
+                                videoImage = video.image
                             }
 
-                            const input_text = args.join(' ').trim()
-                            let videoIdBypass = null
-                            try { videoIdBypass = getVideoId(input_text) } catch {}
+                            await conn.sendMessage(from, { image: { url: videoImage }, caption: `➩ Descargando Audio › *${videoTitle}*` }, { quoted: msg })
                             
-                            const query = videoIdBypass ? `https://youtu.be/${videoIdBypass}` : input_text
-                            let url = query
-                            let title = 'audio'
-                            let thumbnail = null
-
-                            try {
-                                const search = await yts(query)
-                                const video_info = search.videos?.[0] || search.all?.find(v => v.type === 'video') || null
-
-                                if (video_info) {
-                                    url = video_info.url || `https://youtu.be/${video_info.videoId}`
-                                    title = video_info.title || title
-                                    thumbnail = video_info.image || video_info.thumbnail || null
-
-                                    const views = Number(video_info.views || 0).toLocaleString('es-HN')
-                                    const channel = video_info.author?.name || video_info.author || 'Desconocido'
-
-                                    const info_message = `➩ Descargando › *${title}*
-
-> ❖ Canal › *${channel}*
-> ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
-> ❀ Vistas › *${views}*
-> ✩ Publicado › *${video_info.ago || 'Desconocido'}*
-> ❒ Enlace › *${url}*`
-
-                                    if (thumbnail) {
-                                        await conn.sendMessage(from, { image: { url: thumbnail }, caption: info_message }, { quoted: msg })
-                                    } else {
-                                        await conn.sendMessage(from, { text: info_message }, { quoted: msg })
-                                    }
-                                }
-                            } catch {}
-
-                            const enlaceDirectoMp3 = await descargarYT(url, 'mp3')
-
-                            await conn.sendMessage(from, {
-                                audio: { url: enlaceDirectoMp3 },
-                                fileName: `${title}.mp3`,
+                            const resultado = await descargarYT(videoUrl, 'mp3')
+                            const configAudio = {
+                                audio: resultado.tipo === 'url' ? { url: resultado.stream } : fs.readFileSync(resultado.stream),
+                                fileName: `${videoTitle}.mp3`,
                                 mimetype: 'audio/mpeg'
-                            }, { quoted: msg })
+                            }
+                            
+                            await conn.sendMessage(from, configAudio, { quoted: msg })
+                            if (resultado.tipo === 'local') fs.unlinkSync(resultado.stream)
 
-                        } catch (e) {
-                            await conn.sendMessage(from, { text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]` }, { quoted: msg })
+                        } catch (e) { 
+                            reply(`[Error]: ${e.message}\n\n💡 Consejo: Si la búsqueda falla por restricciones de YouTube, pásame el enlace directo del video.`) 
                         }
                         break
 
                     case 'play2':
                     case 'mp4':
-                    case 'ytmp4':
-                    case 'ytvideo':
-                    case 'playvideo':
                         try {
-                            if (!args[0]) {
-                                return await conn.sendMessage(from, { text: '《✧》Por favor, menciona el nombre o URL del video que deseas descargar' }, { quoted: msg })
+                            if (!args[0]) return reply('《✧》Por favor, menciona el nombre o URL del video.')
+                            const input_text = args.join(' ').trim()
+                            
+                            let videoUrl = ''
+                            let videoTitle = 'Video'
+                            let videoImage = global.banner
+
+                            if (input_text.includes('youtube.com') || input_text.includes('youtu.be')) {
+                                videoUrl = input_text
+                            } else {
+                                const search = await yts(input_text).catch(() => null)
+                                const video = search?.videos?.[0]
+                                if (!video) return reply('❌ Error: No se pudo obtener el token de YouTube. Intenta de nuevo usando un enlace directo.')
+                                videoUrl = video.url
+                                videoTitle = video.title
+                                videoImage = video.image
                             }
 
-                            const input_text = args.join(' ').trim()
-                            let videoIdBypass2 = null
-                            try { videoIdBypass2 = getVideoId(input_text) } catch {}
+                            await conn.sendMessage(from, { image: { url: videoImage }, caption: `➩ Descargando Video › *${videoTitle}*` }, { quoted: msg })
                             
-                            const query = videoIdBypass2 ? `https://youtu.be/${videoIdBypass2}` : input_text
-                            let url = query
-                            let title = 'video'
-                            let thumbnail = null
-
-                            try {
-                                const search = await yts(query)
-                                const video_info = search.videos?.[0] || search.all?.find(v => v.type === 'video') || null
-
-                                if (video_info) {
-                                    url = video_info.url || `https://youtu.be/${video_info.videoId}`
-                                    title = video_info.title || title
-                                    thumbnail = video_info.image || video_info.thumbnail || null
-
-                                    const views = Number(video_info.views || 0).toLocaleString('es-HN')
-                                    const channel = video_info.author?.name || video_info.author || 'Desconocido'
-
-                                    const info_message = `➩ Descargando Video › *${title}*
-
-> ❖ Canal › *${channel}*
-> ⴵ Duración › *${video_info.timestamp || 'Desconocido'}*
-> ❀ Vistas › *${views}*
-> ✩ Publicado › *${video_info.ago || 'Desconocido'}*
-> ❒ Enlace › *${url}*`
-
-                                    if (thumbnail) {
-                                        await conn.sendMessage(from, { image: { url: thumbnail }, caption: info_message }, { quoted: msg })
-                                    } else {
-                                        await conn.sendMessage(from, { text: info_message }, { quoted: msg })
-                                    }
-                                }
-                            } catch {}
-
-                            const enlaceDirectoMp4 = await descargarYT(url, 'mp4')
-
-                            await conn.sendMessage(from, {
-                                video: { url: enlaceDirectoMp4 },
-                                fileName: `${title}.mp4`,
+                            const resultado = await descargarYT(videoUrl, 'mp4')
+                            const configVideo = {
+                                video: resultado.tipo === 'url' ? { url: resultado.stream } : fs.readFileSync(resultado.stream),
+                                fileName: `${videoTitle}.mp4`,
                                 mimetype: 'video/mp4'
-                            }, { quoted: msg })
+                            }
+                            
+                            await conn.sendMessage(from, configVideo, { quoted: msg })
+                            if (resultado.tipo === 'local') fs.unlinkSync(resultado.stream)
 
-                        } catch (e) {
-                            await conn.sendMessage(from, { text: `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n> [Error: *${e.message}*]` }, { quoted: msg })
+                        } catch (e) { 
+                            reply(`[Error]: ${e.message}\n\n💡 Consejo: Si la búsqueda falla por restricciones de YouTube, pásame el enlace directo del video.`) 
                         }
                         break
                         
                     default:
-                        // Evitar respuestas automáticas vacías que generen bucles en tu chat personal
-                        if (body.startsWith(usedPrefix)) {
-                            reply(`Comando no encontrado: *${command}*\n\nUsa *${usedPrefix}help* para ver los comandos disponibles`)
-                        }
+                        if (body.startsWith(usedPrefix)) reply(`Comando no encontrado: *${command}*`)
                         break
                 }
             }
         } catch (err) { console.error(err) }
     })
 
+    // ==========================================
+    // CONTROL DE CONEXIÓN Y RECONEXIONES
+    // ==========================================
     conn.ev.on('connection.update', (u) => {
         if (u.connection === 'open') {
-            console.log(chalk.cyan('   -------------------------------'))
-            console.log(chalk.cyan(`    ${global.botName.toUpperCase()} CONECTADO`))
-            console.log(chalk.cyan('   -------------------------------'))
-            console.log(chalk.white(`   Owner: ${global.dev}`))
-            console.log(chalk.white(`   Prefijo: ${global.prefix[0]}`))
-            console.log(chalk.white('   Base: Corvette Script'))
-            console.log(chalk.white('   GitHub: github.com/ScriptGray'))
-            console.log(chalk.cyan('   -------------------------------\n'))
+            console.log(chalk.cyan('\n   ---------------------------------------\n    BOT DE RAILWAY INICIADO CORRECTAMENTE\n   ---------------------------------------'))
         }
-        if (u.connection === 'close' && new Boom(u.lastDisconnect?.error)?.output.statusCode !== DisconnectReason.loggedOut) {
-            console.log(chalk.white('   Reconectando...'))
-            startBot()
+        if (u.connection === 'close') {
+            const reason = new Boom(u.lastDisconnect?.error)?.output.statusCode
+            if (reason !== DisconnectReason.loggedOut) {
+                console.log(chalk.yellow('🔄 Conexión interrumpida en Railway. Reconectando...'))
+                startBot()
+            } else {
+                console.log(chalk.red('❌ Sesión cerrada de WhatsApp. Eliminando archivos corruptos en Railway...'))
+                if (fs.existsSync(authFolder)) fs.rmSync(authFolder, { recursive: true, force: true })
+                process.exit(0)
+            }
         }
     })
 }
 
-startBot()
+startBot().catch(err => console.error('Fallo crítico al arrancar en Railway:', err))
